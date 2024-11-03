@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Interview Assistant</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        h1 {
+            color: #4A90E2;
+            text-align: center;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        textarea, select, input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            resize: none;
+        }
+        button {
+            padding: 10px 20px;
+            margin-top: 10px;
+            font-size: 16px;
+            color: #fff;
+            background-color: #4A90E2;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #357ABD;
+        }
+        .recording-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: red;
+            margin-left: 10px;
+            visibility: hidden;
+            animation: blinking 1s infinite;
+        }
+        @keyframes blinking {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+        .answer-section {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            margin-top: 10px;
+        }
+        .answer-title {
+            color: #4A90E2;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Interview Assistant</h1>
+
+    <!-- Job Posting Input -->
+    <div class="section">
+        <label for="job_posting">Job Posting:</label>
+        <textarea id="job_posting" rows="4" placeholder="Paste job posting here"></textarea>
+    </div>
+
+    <!-- Resume Input -->
+    <div class="section">
+        <label for="resume">Resume:</label>
+        <textarea id="resume" rows="4" placeholder="Paste resume here"></textarea>
+    </div>
+
+    <!-- Model and Position -->
+    <div class="section">
+        <label for="model">Model:</label>
+        <select id="model">
+            <option value="gpt-4o-mini">gpt-4o-mini</option>
+            <option value="gpt-4o">gpt-4o</option>
+            <option value="gpt-4-turbo">gpt-4-turbo</option>
+            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+        </select>
+        <br>
+        <label for="position">Position:</label>
+        <input type="text" id="position" placeholder="Position" value="Python Developer">
+    </div>
+
+    <!-- Microphone Recording and Transcript Input -->
+    <div class="section">
+        <button onclick="startRecording()">Start Recording</button>
+        <button onclick="stopRecording()">Stop Recording</button>
+        <span class="recording-indicator" id="recording-indicator"></span>
+        <textarea id="transcript" rows="3" placeholder="Transcription will appear here"></textarea>
+    </div>
+
+    <!-- Button for Generating Answer -->
+    <div class="section">
+        <button onclick="generateAnswer()">Get Answer</button>
+    </div>
+
+    <!-- Display Short and Long Answers -->
+    <div class="answer-section">
+        <p class="answer-title">Short Answer:</p>
+        <p id="short_answer"></p>
+    </div>
+    <div class="answer-section">
+        <p class="answer-title">Long Answer:</p>
+        <p id="long_answer"></p>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        const recordingIndicator = document.getElementById("recording-indicator");
+
+        async function startRecording() {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = event => {
+                audioChunks.push(event.data);
+            };
+            mediaRecorder.start();
+            // Show the recording indicator
+            recordingIndicator.style.visibility = 'visible';
+        }
+
+        function stopRecording() {
+            mediaRecorder.stop();
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('audio_file', audioBlob);
+
+                const response = await fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                document.getElementById('transcript').value = data.transcript || "Error transcribing audio.";
+                audioChunks = []; // Reset the audio chunks
+
+                // Hide the recording indicator
+                recordingIndicator.style.visibility = 'hidden';
+            };
+        }
+
+        async function generateAnswer() {
+            const job_posting = document.getElementById("job_posting").value;
+            const resume = document.getElementById("resume").value;
+            const position = document.getElementById("position").value;
+            const model = document.getElementById("model").value;
+            const transcript = document.getElementById("transcript").value;
+
+            const response = await fetch("/generate_answer", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ job_posting, resume, position, model, transcript })
+            });
+            const data = await response.json();
+            document.getElementById("short_answer").innerText = data.short_answer || "Error generating short answer.";
+            document.getElementById("long_answer").innerText = data.long_answer || "Error generating long answer.";
+        }
+    </script>
+
+</body>
+</html>
