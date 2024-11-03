@@ -3,11 +3,9 @@ from flask import Flask, render_template, request, jsonify
 from typing import Optional
 import tempfile
 import os
-from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
-import openai  # Import openai directly
+import openai
 from loguru import logger
-import whisper  # Import Whisper for local audio transcription
 
 # Load environment variables
 load_dotenv()
@@ -34,15 +32,16 @@ LONG_INSTRUCTION = "Before answering, take a deep breath and think one step at a
 # Set up logging
 logger.add("app_log_{time}.log", rotation="1 day")
 
-# Load the Whisper model for local transcription
-whisper_model = whisper.load_model("base")  # Adjust model size as needed
-
-# Audio transcription function
+# Audio transcription function using Whisper API
 def transcribe_audio(path_to_file: str) -> str:
-    logger.debug(f"Transcribing audio from: {path_to_file}...")
+    logger.debug(f"Transcribing audio using Whisper API...")
     try:
-        result = whisper_model.transcribe(path_to_file)
-        transcript = result['text']
+        with open(path_to_file, "rb") as audio_file:
+            response = openai.Audio.transcribe(
+                model="whisper-1",
+                file=audio_file
+            )
+        transcript = response['text']
         logger.debug("Audio transcription completed.")
         return transcript
     except Exception as error:
