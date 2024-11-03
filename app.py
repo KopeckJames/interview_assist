@@ -85,33 +85,126 @@ def get_audio_recorder_html():
             let animationId;
 
             async function setupAudio() {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
-                
-                // Set up audio analysis
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                analyser = audioContext.createAnalyser();
-                const source = audioContext.createMediaStreamSource(stream);
-                source.connect(analyser);
-                analyser.fftSize = 256;
-                dataArray = new Uint8Array(analyser.frequencyBinCount);
-                
-                mediaRecorder.ondataavailable = (event) => {
-                    audioChunks.push(event.data);
-                };
-                
-                mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    const reader = new FileReader();
-                    reader.readAsDataURL(audioBlob);
-                    reader.onloadend = () => {
-                        const base64Audio = reader.result.split(',')[1];
-                        window.parent.postMessage({
-                            type: 'streamlit:setComponentValue',
-                            data: base64Audio
-                        }, '*');
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            channelCount: 1,
+                            sampleRate: 16000
+                        }
+                    });
+
+                    // Set up audio analysis
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                        sampleRate: 16000
+                    });
+                    analyser = audioContext.createAnalyser();
+                    const source = audioContext.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                    analyser.fftSize = 256;
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                    mediaRecorder = new MediaRecorder(stream, {
+                        mimeType: 'audio/webm;codecs=opus',
+                        audioBitsPerSecond: 16000
+                    });
+
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) {
+                            audioChunks.push(event.data);
+                        }
                     };
-                };
+
+                    mediaRecorder.onstop = async () => {
+                        try {
+                            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                            
+                            // Convert to WAV using audio context
+                            const arrayBuffer = await audioBlob.arrayBuffer();
+                            const audioContext = new AudioContext();
+                            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                            
+                            // Create WAV file
+                            const numberOfChannels = 1;
+                            const length = audioBuffer.length;
+                            const sampleRate = 16000;
+                            const wavBuffer = audioContext.createBuffer(numberOfChannels, length, sampleRate);
+                            
+                            // Copy the audio data
+                            const channelData = audioBuffer.getChannelData(0);
+                            wavBuffer.copyToChannel(channelData, 0);
+                            
+                            // Convert to WAV Blob
+                            const wavBlob = new Blob([exportWAV(wavBuffer)], { type: 'audio/wav' });
+                            
+                            // Convert to base64
+                            const reader = new FileReader();
+                            reader.readAsDataURL(wavBlob);
+                            reader.onloadend = () => {
+                                const base64Audio = reader.result.split(',')[1];
+                                window.parent.postMessage({
+                                    type: 'streamlit:setComponentValue',
+                                    data: base64Audio
+                                }, '*');
+                            };
+                        } catch (error) {
+                            console.error('Error processing audio:', error);
+                        }
+                    };
+                } catch (error) {
+                    console.error('Error setting up audio:', error);
+                }
+            }
+
+            function exportWAV(audioBuffer) {
+                const numChannels = audioBuffer.numberOfChannels;
+                const sampleRate = audioBuffer.sampleRate;
+                const format = 1; // PCM
+                const bitDepth = 16;
+                
+                const bytesPerSample = bitDepth / 8;
+                const blockAlign = numChannels * bytesPerSample;
+                
+                const buffer = audioBuffer.getChannelData(0);
+                const samples = buffer.length;
+                const dataSize = samples * blockAlign;
+                const headerSize = 44;
+                const totalSize = headerSize + dataSize;
+                
+                const arrayBuffer = new ArrayBuffer(totalSize);
+                const view = new DataView(arrayBuffer);
+                
+                // WAV header
+                writeString(view, 0, 'RIFF');
+                view.setUint32(4, totalSize - 8, true);
+                writeString(view, 8, 'WAVE');
+                writeString(view, 12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, format, true);
+                view.setUint16(22, numChannels, true);
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, sampleRate * blockAlign, true);
+                view.setUint16(32, blockAlign, true);
+                view.setUint16(34, bitDepth, true);
+                writeString(view, 36, 'data');
+                view.setUint32(40, dataSize, true);
+                
+                // Write audio data
+                floatTo16BitPCM(view, 44, buffer);
+                
+                return arrayBuffer;
+            }
+
+            function writeString(view, offset, string) {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            }
+
+            function floatTo16BitPCM(view, offset, input) {
+                for (let i = 0; i < input.length; i++, offset += 2) {
+                    const s = Math.max(-1, Math.min(1, input[i]));
+                    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                }
             }
 
             function updateAudioLevel() {
@@ -137,13 +230,14 @@ def get_audio_recorder_html():
                             await setupAudio();
                         }
                         audioChunks = [];
-                        mediaRecorder.start();
+                        mediaRecorder.start(100);
                         isRecording = true;
                         button.textContent = '⏹️ Stop Recording';
                         button.classList.add('recording');
                         updateAudioLevel();
                     } catch (error) {
                         console.error('Error:', error);
+                        alert('Error accessing microphone. Please ensure microphone permissions are granted.');
                     }
                 } else {
                     mediaRecorder.stop();
@@ -164,23 +258,29 @@ def transcribe_audio(audio_bytes) -> str:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
             temp_file.write(audio_bytes)
             temp_file.flush()
+            os.fsync(temp_file.fileno())
             
             # Open the file in binary read mode for the API
             with open(temp_file.name, 'rb') as audio_file:
-                response = openai.Audio.transcribe(
-                    model="whisper-1",
-                    file=audio_file
-                )
-            
-            # Clean up the temporary file
-            os.unlink(temp_file.name)
-            
-            transcript = response['text']
-            logger.debug("Audio transcription completed.")
-            return transcript
+                try:
+                    response = openai.Audio.transcribe(
+                        "whisper-1",
+                        audio_file,
+                        response_format="text"
+                    )
+                    logger.debug("Audio transcription completed.")
+                    return response
+                except Exception as e:
+                    logger.error(f"OpenAI API error: {str(e)}")
+                    raise e
     except Exception as error:
         logger.error(f"Transcription error: {error}")
         raise error
+    finally:
+        try:
+            os.unlink(temp_file.name)
+        except:
+            pass
 
 def generate_answer(
     transcript: str,
@@ -246,17 +346,19 @@ def main():
             st.components.v1.html(get_audio_recorder_html(), height=100)
             
             # Handle recorded audio
-            if 'audio_data' in st.session_state:
-                try:
-                    with st.spinner('Transcribing recorded audio...'):
-                        audio_bytes = base64.b64decode(st.session_state.audio_data)
-                        transcript = transcribe_audio(audio_bytes)
-                        st.session_state.transcript = transcript
-                        st.success("Recording transcribed successfully!")
-                        # Clear the audio data
-                        del st.session_state.audio_data
-                except Exception as e:
-                    st.error(f"Error transcribing recording: {str(e)}")
+        if 'audio_data' in st.session_state:
+            try:
+                with st.spinner('Transcribing recorded audio...'):
+                    audio_bytes = base64.b64decode(st.session_state.audio_data)
+                    logger.debug(f"Audio size: {len(audio_bytes)} bytes")
+                    transcript = transcribe_audio(audio_bytes)
+                    st.session_state.transcript = transcript
+                    st.success("Recording transcribed successfully!")
+                    # Clear the audio data
+                    del st.session_state.audio_data
+            except Exception as e:
+                st.error(f"Error transcribing recording: {str(e)}")
+                logger.error(f"Transcription error: {str(e)}")
 
         with tabs[1]:
             uploaded_file = st.file_uploader(
