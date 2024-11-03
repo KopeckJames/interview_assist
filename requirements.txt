@@ -1,8 +1,9 @@
-Flask==2.1.1
-Werkzeug==2.0.3
-loguru==0.5.3
-python-dotenv==0.19.2
+Flask==2.0.1
+python-dotenv==0.19.0
 openai==0.27.0
-gunicorn
-soundfile==0.10.3.post1
-openai-whisper
+gunicorn==20.1.0
+loguru==0.6.0
+openai-whisper==20231117
+torch==2.1.0
+numpy>=1.20.0
+ffmpeg-python==0.2.0
