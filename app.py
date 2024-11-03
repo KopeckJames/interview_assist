@@ -1,7 +1,9 @@
 # app.py
 from flask import Flask, render_template, request, jsonify
 from typing import Optional
+import tempfile
 import os
+from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 import openai  # Import openai directly
 from loguru import logger
@@ -89,10 +91,12 @@ def home():
 def transcribe_audio_endpoint():
     try:
         file = request.files["audio_file"]
-        path = os.path.join("uploads", OUTPUT_FILE_NAME)
-        os.makedirs("uploads", exist_ok=True)
-        file.save(path)
-        transcript = transcribe_audio(path)
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+            file.save(temp_file.name)
+            transcript = transcribe_audio(temp_file.name)
+            # Clean up the temporary file
+            os.unlink(temp_file.name)
         return jsonify({"transcript": transcript}), 200
     except Exception as error:
         logger.error(f"Error in transcription endpoint: {error}")
@@ -122,4 +126,5 @@ def generate_answer_endpoint():
         return jsonify({"error": "Answer generation failed."}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
