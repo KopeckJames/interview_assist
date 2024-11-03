@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import openai  # Import openai directly
 from loguru import logger
+import whisper  # Import Whisper for local audio transcription
 
 # Load environment variables
 load_dotenv()
@@ -31,22 +32,20 @@ LONG_INSTRUCTION = "Before answering, take a deep breath and think one step at a
 # Set up logging
 logger.add("app_log_{time}.log", rotation="1 day")
 
+# Load the Whisper model for local transcription
+whisper_model = whisper.load_model("base")  # Adjust model size as needed
+
 # Audio transcription function
 def transcribe_audio(path_to_file: str) -> str:
     logger.debug(f"Transcribing audio from: {path_to_file}...")
-    with open(path_to_file, "rb") as audio_file:
-        try:
-            # Use the correct OpenAI method for transcription
-            transcript = openai.Audio.transcriptions.create(
-                model="whisper-1",  # Replace with correct Whisper model if needed
-                file=audio_file,
-                response_format="text"
-            )
-            logger.debug("Audio transcription completed.")
-            return transcript
-        except Exception as error:
-            logger.error(f"Transcription error: {error}")
-            raise error
+    try:
+        result = whisper_model.transcribe(path_to_file)
+        transcript = result['text']
+        logger.debug("Audio transcription completed.")
+        return transcript
+    except Exception as error:
+        logger.error(f"Transcription error: {error}")
+        raise error
 
 # Answer generation function
 def generate_answer(
@@ -74,7 +73,7 @@ def generate_answer(
             ],
             temperature=0.7,
         )
-        answer = response.choices[0].message["content"]
+        answer = response['choices'][0]['message']['content']
         return answer
     except Exception as error:
         logger.error(f"Answer generation error: {error}")
