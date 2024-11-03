@@ -36,14 +36,17 @@ def transcribe_audio(path_to_file: str) -> str:
     logger.debug(f"Transcribing audio from: {path_to_file}...")
     with open(path_to_file, "rb") as audio_file:
         try:
-            transcript = openai.Audio.transcribe(  # Use openai.Audio.transcribe for transcription
-                model="whisper-1", file=audio_file
-            )["text"]
+            # Use the correct OpenAI method for transcription
+            transcript = openai.Audio.transcriptions.create(
+                model="whisper-1",  # Replace with correct Whisper model if needed
+                file=audio_file,
+                response_format="text"
+            )
+            logger.debug("Audio transcription completed.")
+            return transcript
         except Exception as error:
             logger.error(f"Transcription error: {error}")
             raise error
-    logger.debug("Audio transcription completed.")
-    return transcript
 
 # Answer generation function
 def generate_answer(
