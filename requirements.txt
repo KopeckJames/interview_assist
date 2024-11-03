@@ -3,6 +3,6 @@ Werkzeug==2.0.3
 loguru==0.5.3
 python-dotenv==0.19.2
 openai==0.27.0
-
+gunicorn
 soundfile==0.10.3.post1
 openai-whisper
